@@ -1,0 +1,152 @@
+type: install
+id: lab-apachephp-nginx-mysql-latest
+version: 1.0
+name: Lab ApachePHP + NGINX + MySQL
+
+description:
+  text: Teste com jelastic/apachephp:latest (mostra versões de Apache/PHP no index).
+
+globals:
+  PASSWD: ${fn.password}
+  DBNAME: demo_access
+  DBHOST: sqldb
+  DBPORT: 3306
+
+settings:
+  fields:
+    - type: list
+      name: region
+      caption: "Região"
+      required: true
+      values:
+        - value: sp1
+          caption: "São Paulo (sp1)"
+        - value: for
+          caption: "Fortaleza (for)"
+        - value: bsb
+          caption: "Brasília (bsb)"
+
+    - type: string
+      name: git_repo
+      caption: "Git repo URL"
+      required: true
+      default: "https://github.com/joseph-lins/Apache-PHP_NGINX_DBMySQL.git"
+
+    - type: string
+      name: git_branch
+      caption: "Git branch/tag"
+      required: true
+      default: "main"
+
+    - type: list
+      name: mysql_tag
+      caption: "Versão do MySQL"
+      required: true
+      values:
+        - value: "9.3.0-almalinux-9"
+          caption: "MySQL 9.3.0 (AlmaLinux 9)"
+
+nodes:
+  - nodeType: nginx
+    nodeGroup: bl
+    cloudlets: 8
+    count: 1
+    displayName: NGINX Load Balancer
+
+  - fixedCloudlets: 1
+    cloudlets: 8
+    image: jelastic/apachephp:latest
+    nodeGroup: cp
+    count: 1
+    displayName: ApachePHP (latest)
+
+  - fixedCloudlets: 1
+    cloudlets: 16
+    image: jelastic/mysql:${settings.mysql_tag}
+    nodeGroup: sqldb
+    count: 1
+    displayName: MySQL
+    env:
+      JELASTIC_EXPOSE: false
+
+skipNodeEmails: true
+
+onInstall:
+  - cmd [sqldb]: /bin/bash /usr/bin/jem passwd set -p ${globals.PASSWD} -u root --timeout 3570
+
+  - cmd [cp]:
+      - |-
+        set -e
+        WEBROOT="/var/www/webroot/ROOT"
+        rm -rf "$WEBROOT"
+        mkdir -p "$WEBROOT"
+        git clone --depth 1 -b ${settings.git_branch} ${settings.git_repo} "$WEBROOT" || true
+
+        cat > "$WEBROOT/db_config.php" <<PHP
+        <?php
+        define('DB_HOST', '${globals.DBHOST}');
+        define('DB_PORT', '${globals.DBPORT}');
+        define('DB_NAME', '${globals.DBNAME}');
+        define('DB_USER', 'root');
+        define('DB_PASS', '${globals.PASSWD}');
+        PHP
+
+        # página de diagnóstico de versão
+        cat > "$WEBROOT/index.php" <<'PHP'
+        <?php
+        header('Content-Type: text/html; charset=utf-8');
+        echo "<h1>TESTE BEM SUCEDIDO</h1>";
+        echo "<h2>Versões</h2>";
+        echo "<p><b>PHP:</b> " . phpversion() . "</p>";
+        if (function_exists('apache_get_version')) {
+          echo "<p><b>Apache:</b> " . apache_get_version() . "</p>";
+        } else {
+          echo "<p><b>Apache:</b> (apache_get_version indisponível)</p>";
+        }
+
+        echo "<h2>DB Config</h2>";
+        if (file_exists(__DIR__ . '/db_config.php')) {
+          require __DIR__ . '/db_config.php';
+          echo "<p>DB_HOST: " . DB_HOST . "</p>";
+          echo "<p>DB_PORT: " . DB_PORT . "</p>";
+          echo "<p>DB_NAME: " . DB_NAME . "</p>";
+          echo "<p>DB_USER: " . DB_USER . "</p>";
+          echo "<p>DB_PASS: (oculta)</p>";
+        } else {
+          echo "<p>db_config.php não encontrado</p>";
+        }
+
+        echo "<h2>Arquivo</h2>";
+        echo "<p>Veja também: <a href='version.txt'>version.txt</a></p>";
+        PHP
+
+        # salva versões em arquivo texto
+        {
+          echo "=== date ==="
+          date
+          echo
+          echo "=== php -v ==="
+          php -v 2>&1 || true
+          echo
+          echo "=== httpd -v ==="
+          httpd -v 2>&1 || true
+          echo
+          echo "=== apache2 -v ==="
+          apache2 -v 2>&1 || true
+        } > "$WEBROOT/version.txt"
+
+        chown -R apache:apache "$WEBROOT" 2>/dev/null || true
+        chmod -R 755 "$WEBROOT" || true
+
+success:
+  text: |
+    Ambiente criado com ApachePHP:latest.
+
+    Abra o endpoint do NGINX e veja as versões em / (index.php)
+    ou /version.txt.
+
+    MySQL:
+    Host interno: ${globals.DBHOST}:${globals.DBPORT}
+    Database: ${globals.DBNAME}
+    Usuário: root
+    Senha: ${globals.PASSWD}
