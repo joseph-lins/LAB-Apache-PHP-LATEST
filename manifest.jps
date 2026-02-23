@@ -4,7 +4,7 @@ version: 1.0
 name: Lab ApachePHP + NGINX + MySQL
 
 description:
-  text: Teste com jelastic/apachephp:latest (mostra versões de Apache/PHP no index).
+  text: Teste com jelastic/apachephp:latest 
 
 globals:
   PASSWD: ${fn.password}
